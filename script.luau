@@ -173,7 +173,7 @@ commands = setmetatable({
     };
 
     command.new {
-        name = "kill/fling/sfling/skidfling";
+        name = "fl/kill/fling/sfling/skidfling";
         callback = function(self, source, TargetPlayer: Player)
             local Character = LocalPlayer.Character
             local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
@@ -525,5 +525,5 @@ runner = {
 
 TextChatService.MessageReceived:Connect(runner.incomingMessage);
 
-local loadTime = math.round(((DateTime.now().UnixTimestampMillis-s)/1000) * 10) / 10
-runner.sendChatMessage(`loaded in {loadTime}`)
+local loadTime = math.round(((DateTime.now().UnixTimestampMillis-s)/1000) * 100) / 100
+runner.sendChatMessage(`loaded in {loadTime}s`)
