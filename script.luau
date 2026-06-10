@@ -387,6 +387,13 @@ commands = setmetatable({
                 local localCharacter = LocalPlayer.Character;
                 local targetCharacter = targetPlayer.Character;
 
+                local curPv = localCharacter:GetPivot();
+                local targetPv = targetCharacter:GetPivot();
+
+                if (curPv.Y+1 < targetPv.Y) then
+                    localCharacter.Humanoid.Jump = true;
+                end;
+
                 localCharacter.Humanoid:MoveTo(
                     (targetCharacter.HumanoidRootPart.CFrame * CFrame.new(offset or Vector3.zero)).Position
                 );
