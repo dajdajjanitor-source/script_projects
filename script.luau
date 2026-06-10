@@ -2,7 +2,7 @@
 local s = DateTime.now().UnixTimestampMillis;
 
 local _metadata = {
-	['_VERSION'] = {1, 4};
+	['_VERSION'] = {1, 5};
 }
 
 local CoreGuiConfiguration = game:GetService("CoreGuiConfiguration")
@@ -37,7 +37,9 @@ local command = {} do
 			if not perms then warn("invalid permissions"); return; end;
 
 			local thread = task.spawn(
-				self.callback, self, source, table.unpack(args)
+				function()
+                    pcall(self.callback, self, source, table.unpack(args));
+                end
 			)
 
 			-- if table.find(modifiers, "loop") then
