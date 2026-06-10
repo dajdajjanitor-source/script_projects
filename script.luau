@@ -378,15 +378,29 @@ runner = {
     ranCommandLog = {}; --// logs the commands you run
 
     typeConverters = {
-        player = function(name: string): Player?
-            for i, v in game:GetService("Players"):GetPlayers() do
+        player = function(source: Player, name: string): Player?
+            local allPlayers = game:GetService("Players"):GetPlayers()
+
+            if name == "_random" then
+                local randomPlayer;
+
+                if #allPlayers == 1 then return end;
+                
+                while not randomPlayer or (randomPlayer == source) do
+                    randomPlayer = allPlayers[math.random(1, #allPlayers)]
+                end;
+
+                return randomPlayer;
+            end;
+
+            for i, v in allPlayers do
                 if v.Name:lower() == name:lower() then
                     return v;
                 end;
             end;
             return;
         end;
-        playerd = function(displayName: string): Player?
+        playerd = function(source: Player, displayName: string): Player?
             for i, v in game:GetService("Players"):GetPlayers() do
                 if v.DisplayName:lower() == displayName:lower() then
                     return v;
@@ -394,7 +408,7 @@ runner = {
             end;
             return;
         end;
-        autop = function(user: string): Player?
+        autop = function(source: Player, user: string): Player?
             local players = game:GetService("Players"):GetPlayers();
             for i, v in players do
                 for char=1, #v.Name do
@@ -412,7 +426,7 @@ runner = {
             return;
         end;
         --// "vec3:0,0,0"
-        vec3 = function(vec3: string): Vector3?
+        vec3 = function(source: Player, vec3: string): Vector3?
             local coordinates = vec3:gsub(" ", ""):split(',');
             return Vector3.new(
                 coordinates[1],
@@ -421,7 +435,7 @@ runner = {
             );
         end;
 
-        int = function(toInt: string): number?
+        int = function(source: Player, toInt: string): number?
             local integer = tonumber(toInt)
             if integer then
                 integer = math.round(integer);
@@ -429,13 +443,13 @@ runner = {
             return;
         end;
 
-        float = function(toFloat: string): number?
+        float = function(source: Player, toFloat: string): number?
             local float = tonumber(toFloat)
             return float;
         end;
     };
 
-    typeConvertString = function(str: string): any?
+    typeConvertString = function(source: Player, str: string): any?
         local tokens = str:split(':');
 
         local type = tokens[1];
@@ -444,7 +458,7 @@ runner = {
         local value;
         for i, v in runner.typeConverters do
             if i == type then
-                value = v(rawValue);
+                value = v(source, rawValue);
                 break;
             end;
         end;
@@ -456,7 +470,7 @@ runner = {
         return;
     end;
 
-    tokenize = function(rawCommandStr: string) 
+    tokenize = function(source: Player, rawCommandStr: string) 
         local tokenized = {
             modifiers = {};
             prefix = nil;
@@ -480,7 +494,7 @@ runner = {
             end;
             for i, v in string.split(argumentSearch, ' ') do
                 local rawArgString = v;
-                tokenized.arguments[i] = runner.typeConvertString(rawArgString) or rawArgString;
+                tokenized.arguments[i] = runner.typeConvertString(source, rawArgString) or rawArgString;
             end;
         end;
 
@@ -501,7 +515,7 @@ runner = {
 		if not player then return end;
 
         local text = messageObject.Text;
-        local tokenizedCommand = runner.tokenize(text);
+        local tokenizedCommand = runner.tokenize(player, text);
         if not tokenizedCommand then return; end; --// not trying to run a command
         
         local foundCommand = commands.findFromName(tokenizedCommand.command);
