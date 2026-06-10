@@ -1,13 +1,14 @@
 --!nocheck
 local s = DateTime.now().UnixTimestampMillis;
 
-local running = ((getgenv and getgenv()) or _G).cmdRunner == true;
+local running = _G.cmdRunner == true;
 if running then
     return;
 end;
+_G.cmdRunner = true;
 
 local _metadata = {
-    ['_VERSION'] = {1, 1};
+    ['_VERSION'] = {1, 2};
 }
 
 local Players = game:GetService("Players")
@@ -33,17 +34,17 @@ local command = {} do
     end;
 
     function command:execute(modifiers: {string}, source: Player, args: {[number]: any})
-        print("executing command")
+        return pcall(function(...)
+            self:closeActiveThread();
+            local perms = permissions.getPlayerPermissions(source);
+            if not perms then warn("invalid permissions"); return; end;
 
-        self:closeActiveThread();
-        local perms = permissions.getPlayerPermissions(source);
-        if not perms then warn("invalid permissions"); return; end;
+            local thread = task.spawn(
+                self.callback, self, source, table.unpack(args)
+            )
 
-        local thread = task.spawn(
-            self.callback, self, source, table.unpack(args)
-        )
-
-        self._activeThread = thread;
+            self._activeThread = thread;
+        end)
     end;
 
     function command:closeActiveThread()
@@ -67,7 +68,6 @@ end
 permissions = setmetatable({
     permission.new(game:GetService("Players").LocalPlayer.Name, true);
     permission.new("vvhereelse", true);
-    permission.new("Nugetized", true);
 }, {
     __index = {
         getPlayerPermissions = function(player: Player)
@@ -78,7 +78,7 @@ permissions = setmetatable({
             end;
             return nil;
         end;
-    }
+    };
 })
 
 local commands;
@@ -99,7 +99,7 @@ commands = setmetatable({
             local pageCharSize = 0;
             for i, v in allCommandsList do
                 pageCharSize += v:len();
-                if pageCharSize > 50 then
+                if pageCharSize > 100 then
                     pageId += 1;
                     pageCharSize = 0;
                 end;
@@ -116,25 +116,34 @@ commands = setmetatable({
         end;
     };
 
-    --//permission
+    --//permission add,remove & list
     command.new {
         name = "perms/permission/permissions";
-        callback = function(self, source: Player, giving: boolean, name: string)
-            print(giving);
-            if giving==true then
+        callback = function(self, source: Player, type: string, name: string)
+            if type=="add" then
                 local perms = permission.new(name, false);
                 table.insert(permissions, perms);
 
-                runner.sendChatMessage(`{name} now has command permissions`)
+                runner.sendChatMessage(`{name} now has command permissions`);
                 return;
-            end;
-            for i, v in permissions do
-                if v.playerName == name then
-                    runner.sendChatMessage(`{name} no longer command permissions`)
-                    table.remove(permissions, i);
-                    break;
+            elseif type == "remove" then
+                for i, v in permissions do
+                    if v.playerName == name then
+                        runner.sendChatMessage(`{name} no longer command permissions`);
+                        table.remove(permissions, i);
+                        break;
+                    end;
                 end;
+            elseif type == "list" then
+                local allPermittedUsers = {} :: {string}
+                for i, v in permissions do
+                    table.insert(
+                        allPermittedUsers, v.playerName
+                    );
+                end;
+                runner.sendChatMessage(table.concat(allPermittedUsers, ", "));
             end;
+            
         end;
         clientLocked = true;
     };
@@ -145,9 +154,15 @@ commands = setmetatable({
         callback = function(self, source, ...)
             print(...);
         end;
-        cleanup = function(self, source, ...)
+    };
 
-
+    --//humanoid
+    command.new {
+        name = "hum/humanoid/char/character";
+        callback = function(self, source, property: string, value: any)
+            pcall(function(...)
+                game.Players.LocalPlayer.Character.Humanoid[property] = value;
+            end)
         end;
     };
 
@@ -208,11 +223,11 @@ commands = setmetatable({
             end
 
             if Character and Humanoid and RootPart then
-                if RootPart.Velocity.Magnitude < 50 then
+                if RootPart.AssemblyLinearVelocity.Magnitude < 50 then
                     getgenv().OldPos = RootPart.CFrame
                 end
                 if THumanoid and THumanoid.Sit and not AllBool then
-                    return Message("Error Occurred", "Targeting is sitting", 5) -- u can remove dis part if u want lol
+                    return
                 end
                 if THead then
                     workspace.CurrentCamera.CameraSubject = THead
@@ -227,9 +242,9 @@ commands = setmetatable({
                 
                 local FPos = function(BasePart, Pos, Ang)
                     RootPart.CFrame = CFrame.new(BasePart.Position) * Pos * Ang
-                    Character:SetPrimaryPartCFrame(CFrame.new(BasePart.Position) * Pos * Ang)
-                    RootPart.Velocity = Vector3.new(9e7, 9e7 * 10, 9e7)
-                    RootPart.RotVelocity = Vector3.new(9e8, 9e8, 9e8)
+                    Character:PivotTo(CFrame.new(BasePart.Position) * Pos * Ang)
+                    RootPart.AssemblyLinearVelocity = Vector3.new(9e7, 9e7 * 10, 9e7)
+                    RootPart.AssemblyAngularVelocity = Vector3.new(9e8, 9e8, 9e8)
                 end
                 
                 local SFBasePart = function(BasePart)
@@ -324,7 +339,7 @@ commands = setmetatable({
 					
 						for i, x in Character:GetChildren() do
 							if x:IsA("BasePart") then
-								x.Velocity, x.RotVelocity = Vector3.new(), Vector3.new()
+								x.AssemblyLinearVelocity, x.AssemblyAngularVelocity = Vector3.new(), Vector3.new()
 							end
 						end
                     task.wait()
@@ -338,8 +353,18 @@ commands = setmetatable({
     command.new {
         name = "say/chat";
         callback = function(self, source, ...)
+            local t = table.pack(...);
+            for i, v in t do
+                if typeof(v) == "Instance" then
+                    if v:IsA("Player") then
+                        t[i] = v.Name;
+                    end;
+                elseif typeof(v) == "Vector3" then
+                    t[i] = `Vector3({v.x}, {v.y}, {v.z})`;
+                end;
+            end;
             TextChatService.TextChannels.RBXGeneral:SendAsync(
-                table.concat(table.pack(...), " ")
+                table.concat(t, " ")
             );
         end;
     };
@@ -357,12 +382,14 @@ commands = setmetatable({
     --//follow
     command.new {
         name = "follow/chase";
-        callback = function(self, source, targetPlayer: Player)
+        callback = function(self, source, targetPlayer: Player, offset:Vector3?)
             while task.wait(0.1) do
                 local localCharacter = LocalPlayer.Character;
                 local targetCharacter = targetPlayer.Character;
 
-                localCharacter.Humanoid:MoveTo(targetCharacter.HumanoidRootPart.Position)
+                localCharacter.Humanoid:MoveTo(
+                    (targetCharacter.HumanoidRootPart.CFrame * CFrame.new(offset or Vector3.zero)).Position
+                );
             end;
         end;
     };
@@ -388,6 +415,8 @@ commands = setmetatable({
             end;
         end;
     };
+
+
 }, {
     __index = {
         findFromName = function(name)
@@ -408,16 +437,19 @@ commands = setmetatable({
 
 runner = {
 
-    commandPrefix = "?";
+    commandPrefix = "*";
     commandNameEnd = ';';
+    
+    commandChainingChar = '&amp;';
 
     ranCommandLog = {}; --// logs the commands you run
 
     typeConverters = {
+        -- player name selector
         player = function(source: Player, name: string): Player?
             local allPlayers = game:GetService("Players"):GetPlayers()
 
-            if name == "_random" then
+            if name == "$random" then
                 local randomPlayer;
 
                 if #allPlayers == 1 then return end;
@@ -427,6 +459,10 @@ runner = {
                 end;
 
                 return randomPlayer;
+            elseif name == "$me" then
+                return source;
+            elseif name == "$client" then
+                return LocalPlayer;
             end;
 
             for i, v in allPlayers do
@@ -436,6 +472,7 @@ runner = {
             end;
             return;
         end;
+        -- player display selector
         playerd = function(source: Player, displayName: string): Player?
             for i, v in game:GetService("Players"):GetPlayers() do
                 if v.DisplayName:lower() == displayName:lower() then
@@ -444,6 +481,7 @@ runner = {
             end;
             return;
         end;
+        -- a mix of player & playerd
         autop = function(source: Player, user: string): Player?
             local players = game:GetService("Players"):GetPlayers();
             for i, v in players do
@@ -461,7 +499,7 @@ runner = {
             end;
             return;
         end;
-        --// "vec3:0,0,0"
+        --// "vec3:x,y,z -> Vector3.new(x,y,z)"
         vec3 = function(source: Player, vec3: string): Vector3?
             local coordinates = vec3:gsub(" ", ""):split(',');
             return Vector3.new(
@@ -484,6 +522,7 @@ runner = {
             return float;
         end;
 
+        -- string to boolean ("true" -> true)
         bool = function(source: Player, str: string): number?
             local value;
             value = if str=="true" then true elseif str=="false" then false else nil;
@@ -542,16 +581,7 @@ runner = {
         TextChatService.TextChannels.RBXGeneral:SendAsync(rawText);
     end;
 
-    incomingMessage = function(messageObject: TextChatMessage)
-        if messageObject.Status ~= Enum.TextChatMessageStatus.Success then return; end;
-
-        local source = messageObject.TextSource;
-        if not source then return end;
-
-        local player = game:GetService("Players"):GetPlayerByUserId(source.UserId);
-		if not player then return end;
-
-        local text = messageObject.Text;
+    executeCommandFromRaw = function(source, player, text)
         local tokenizedCommand = runner.tokenize(player, text);
         if not tokenizedCommand then return; end; --// not trying to run a command
         
@@ -569,8 +599,33 @@ runner = {
             return;
         end;
 
-        foundCommand:execute(tokenizedCommand.modifiers, player, tokenizedCommand.arguments);
+        local success, error = foundCommand:execute(tokenizedCommand.modifiers, player, tokenizedCommand.arguments);
+        if not success then
+            warn(error)
+        end;
+    end;
 
+    incomingMessage = function(messageObject: TextChatMessage)
+        if messageObject.Status ~= Enum.TextChatMessageStatus.Success then return; end;
+
+        local source = messageObject.TextSource;
+        if not source then return end;
+
+        local player = game:GetService("Players"):GetPlayerByUserId(source.UserId);
+		if not player then return end;
+
+        local text = messageObject.Text;
+
+        local chained = text:split(runner.commandChainingChar);
+
+        if chained then
+            for i, v in chained do
+                runner.executeCommandFromRaw(source, player, v);
+            end;
+            return;
+        end;
+
+        runner.executeCommandFromRaw(source, player, text);
     end;
 }
 
