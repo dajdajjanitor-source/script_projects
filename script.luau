@@ -738,3 +738,5 @@ runner = {
 
 if _G.msgRcCon then _G.msgRcCon:Disconnect() end;
 _G.msgRcCon = TextChatService.MessageReceived:Connect(runner.incomingMessage);
+
+print(_metadata._VERSION);
