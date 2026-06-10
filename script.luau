@@ -7,10 +7,9 @@ if running then
 end;
 
 local _metadata = {
-    ['_VERSION'] = {1, 0};
+    ['_VERSION'] = {1, 1};
 }
 
-local CoreGuiConfiguration = game:GetService("CoreGuiConfiguration")
 local Players = game:GetService("Players")
 local TextChatService = game:GetService("TextChatService");
 
@@ -68,6 +67,7 @@ end
 permissions = setmetatable({
     permission.new(game:GetService("Players").LocalPlayer.Name, true);
     permission.new("vvhereelse", true);
+    permission.new("Nugetized", true);
 }, {
     __index = {
         getPlayerPermissions = function(player: Player)
@@ -84,7 +84,7 @@ permissions = setmetatable({
 local commands;
 
 commands = setmetatable({
-    --//help
+    --//list commands
     command.new {
         name = "commands/help/cmd/cmds";
         callback = function()
@@ -120,7 +120,8 @@ commands = setmetatable({
     command.new {
         name = "perms/permission/permissions";
         callback = function(self, source: Player, giving: boolean, name: string)
-            if giving then
+            print(giving);
+            if giving==true then
                 local perms = permission.new(name, false);
                 table.insert(permissions, perms);
 
@@ -135,9 +136,7 @@ commands = setmetatable({
                 end;
             end;
         end;
-        cleanup = function()
-
-        end;
+        clientLocked = true;
     };
 
     --//print
@@ -409,7 +408,7 @@ commands = setmetatable({
 
 runner = {
 
-    commandPrefix = "*";
+    commandPrefix = "?";
     commandNameEnd = ';';
 
     ranCommandLog = {}; --// logs the commands you run
@@ -576,6 +575,3 @@ runner = {
 }
 
 TextChatService.MessageReceived:Connect(runner.incomingMessage);
-
-local loadTime = math.round(((DateTime.now().UnixTimestampMillis-s)/1000) * 100) / 100
-runner.sendChatMessage(`loaded in {loadTime}s`)
