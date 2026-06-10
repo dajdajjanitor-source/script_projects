@@ -84,6 +84,7 @@ permissions = setmetatable({
 local commands;
 
 commands = setmetatable({
+    --//help
     command.new {
         name = "commands/help/cmd/cmds";
         callback = function()
@@ -115,6 +116,7 @@ commands = setmetatable({
         end;
     };
 
+    --//permission
     command.new {
         name = "perms/permission/permissions";
         callback = function(self, source: Player, giving: boolean, name: string)
@@ -138,6 +140,7 @@ commands = setmetatable({
         end;
     };
 
+    --//print
     command.new {
         name = "print";
         callback = function(self, source, ...)
@@ -149,6 +152,7 @@ commands = setmetatable({
         end;
     };
 
+    --//takedamage
     command.new {
         name = "damage/takedamage";
         callback = function(self, source, damage: number)
@@ -162,6 +166,7 @@ commands = setmetatable({
         end;
     };
 
+    --//tp
     command.new {
         name = "goto/teleport";
         callback = function(self, source, target: Player)
@@ -172,6 +177,7 @@ commands = setmetatable({
         end;
     };
 
+    --//skid fling
     command.new {
         name = "fl/kill/fling/sfling/skidfling";
         callback = function(self, source, TargetPlayer: Player)
@@ -329,6 +335,7 @@ commands = setmetatable({
         end;
     };
 
+    --//chat
     command.new {
         name = "say/chat";
         callback = function(self, source, ...)
@@ -336,20 +343,28 @@ commands = setmetatable({
                 table.concat(table.pack(...), " ")
             );
         end;
-        cleanup = function(self, source, str)
+    };
 
+    --//spam
+    command.new {
+        name = "spam/spammer";
+        callback = function(self, source, delay, ...)
+            while task.wait(delay) do
+                runner.sendChatMessage(table.concat(table.pack(...), ' '));
+            end;
         end;
     };
 
+    --//follow
     command.new {
-        name = "spam/spammer";
-        callback = function(self, source, ...)
-            while task.wait(1) do
-                print(...);
-            end;
-        end;
-        cleanup = function(self, source, ...)
+        name = "follow/chase";
+        callback = function(self, source, targetPlayer: Player)
+            while task.wait(0.1) do
+                local localCharacter = LocalPlayer.Character;
+                local targetCharacter = targetPlayer.Character;
 
+                localCharacter.Humanoid:MoveTo(targetCharacter.HumanoidRootPart.Position)
+            end;
         end;
     };
 }, {
@@ -463,11 +478,6 @@ runner = {
             end;
         end;
         return value;
-    end;
-
-    wrapConvertString = function(str: string): any?
-
-        return;
     end;
 
     tokenize = function(source: Player, rawCommandStr: string) 
