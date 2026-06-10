@@ -2,7 +2,7 @@
 local s = DateTime.now().UnixTimestampMillis;
 
 local _metadata = {
-	['_VERSION'] = {1, 5};
+	['_VERSION'] = {1, 3};
 }
 
 local CoreGuiConfiguration = game:GetService("CoreGuiConfiguration")
@@ -483,7 +483,7 @@ commands = setmetatable({
 			while task.wait() do
 				LocalPlayer.Character:PivotTo(
 					targetPlayer.Character:GetPivot() *
-						CFrame.new() * CFrame.fromOrientation(0, 0, 0)
+						CFrame.new(0, -1, 0) * CFrame.fromOrientation(math.rad(90), 0, 0)
 				)
 			end;
 		end;
@@ -738,5 +738,3 @@ runner = {
 
 if _G.msgRcCon then _G.msgRcCon:Disconnect() end;
 _G.msgRcCon = TextChatService.MessageReceived:Connect(runner.incomingMessage);
-
-print(_metadata._VERSION);
