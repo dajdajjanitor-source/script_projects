@@ -2,7 +2,7 @@
 local s = DateTime.now().UnixTimestampMillis;
 
 local _metadata = {
-	['_VERSION'] = {1, 3};
+	['_VERSION'] = {1, 4};
 }
 
 local CoreGuiConfiguration = game:GetService("CoreGuiConfiguration")
