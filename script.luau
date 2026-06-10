@@ -367,6 +367,28 @@ commands = setmetatable({
             end;
         end;
     };
+
+    --//freeze
+    command.new {
+        name = "freeze/anchor";
+        callback = function(self, source, targetPlayer: Player)
+            local localCharacter = LocalPlayer.Character;
+            for i, v in localCharacter:QueryDescendants("BasePart") do
+                v.Anchored = true;
+            end;
+        end;
+    };
+
+    --//unfreeze
+    command.new {
+        name = "unfreeze/thaw/unanchor";
+        callback = function(self, source, targetPlayer: Player)
+            local localCharacter = LocalPlayer.Character;
+            for i, v in localCharacter:QueryDescendants("BasePart") do
+                v.Anchored = false;
+            end;
+        end;
+    };
 }, {
     __index = {
         findFromName = function(name)
@@ -462,6 +484,12 @@ runner = {
             local float = tonumber(toFloat)
             return float;
         end;
+
+        bool = function(source: Player, str: string): number?
+            local value;
+            value = if str=="true" then true elseif str=="false" then false else nil;
+            return value;
+        end;
     };
 
     typeConvertString = function(source: Player, str: string): any?
@@ -538,7 +566,7 @@ runner = {
         -- table.insert(runner.ranCommandLog, tokenizedCommand);
 
         if tokenizedCommand.arguments[1] == "#stop" then
-            foundCommand:stop();
+            foundCommand:closeActiveThread();
             return;
         end;
 
