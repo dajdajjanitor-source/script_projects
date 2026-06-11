@@ -2,14 +2,14 @@
 local s = DateTime.now().UnixTimestampMillis;
 
 local _metadata = {
-	['_VERSION'] = {1, 3};
+	['_VERSION'] = {1, 7};
 }
 
-local CoreGuiConfiguration = game:GetService("CoreGuiConfiguration")
 local Players = game:GetService("Players")
 local TextChatService = game:GetService("TextChatService");
 
 local LocalPlayer = Players.LocalPlayer;
+
 --//preallocate or sum shit wtv u call it for the stuff so you can call it globally while having optimizations
 local runner;
 local permissions;
@@ -433,14 +433,14 @@ commands = setmetatable({
 				local localCharacter = LocalPlayer.Character;
 				local targetCharacter = targetPlayer.Character;
 
-				local curPv = localCharacter:GetPivot();
-				local targetPv = targetCharacter:GetPivot();
+				local curPv = localCharacter.HumanoidRootPart.CFrame;
+				local targetPv = targetCharacter.HumanoidRootPart.CFrame;
 
 				local rp = RaycastParams.new();
 				rp:AddToFilter(localCharacter);
 				rp:AddToFilter(targetCharacter);
 				local dir = (targetPv.Position-curPv.Position)
-				local rc = workspace:Raycast(curPv.Position, (dir-Vector3.new(0, dir.Y, 0)).Unit*20, rp)
+				local rc = workspace:Raycast(curPv.Position, (dir-Vector3.new(0, dir.Y, 0)).Unit*4, rp)
 
 				if (curPv.Y+4 < targetPv.Y) or rc then
 					localCharacter.Humanoid:ChangeState(Enum.HumanoidStateType.Jumping);
@@ -477,6 +477,7 @@ commands = setmetatable({
 		end;
 	};
 
+    --//carpet
 	command.new {
 		name = "platform/float/carpet";
 		callback = function(self, source, targetPlayer: Player)
