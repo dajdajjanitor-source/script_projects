@@ -465,17 +465,18 @@ commands = setmetatable({
 				local curPv = localCharacter.HumanoidRootPart.CFrame;
 				local targetPv = targetCharacter.HumanoidRootPart.CFrame;
 
-				local rp = RaycastParams.new();
-				rp:AddToFilter(localCharacter);
-				rp:AddToFilter(targetCharacter);
-				local dir = (targetPv.Position-curPv.Position)
-				local rc = workspace:Raycast(curPv.Position, (dir-Vector3.new(0, dir.Y, 0)).Unit*4, rp)
+				local distance = (curPv - targetPv).Magnitude;
 
-				if (curPv.Y+4 < targetPv.Y) or rc then
+				if distance > 30 then
+					localCharacter.HumanoidRootPart.CFrame = targetPv;
+				end;
+
+				if (curPv.Y+4 < targetPv.Y) then
 					localCharacter.Humanoid:ChangeState(Enum.HumanoidStateType.Jumping);
 				end;
 
 				local MoveTo = (targetCharacter.HumanoidRootPart.CFrame * CFrame.new(offset or Vector3.zero)).Position
+				
 
 				localCharacter.Humanoid:MoveTo(
 					MoveTo
@@ -732,10 +733,10 @@ runner = {
 		local tokenizedCommand = runner.tokenize(player, text);
 		if not tokenizedCommand then return; end; --// not trying to run a command
 
-
+		if not permissions.getPlayerPermissions(source) then return end;
 
 		local foundCommand = commands.findFromName(tokenizedCommand.command);
-		if not foundCommand and permissions.getPlayerPermissions(source) then
+		if not foundCommand then
 			runner.sendChatMessage(`unknown command "{tokenizedCommand.command}"`)
 			return;
 		end;
