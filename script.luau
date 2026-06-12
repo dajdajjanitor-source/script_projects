@@ -462,10 +462,12 @@ commands = setmetatable({
 				local localCharacter = LocalPlayer.Character;
 				local targetCharacter = targetPlayer.Character;
 
+				if not localCharacter or not targetCharacter then return end;
+
 				local curPv = localCharacter.HumanoidRootPart.CFrame;
 				local targetPv = targetCharacter.HumanoidRootPart.CFrame;
 
-				local distance = (curPv - targetPv).Magnitude;
+				local distance = (curPv.Position - targetPv.Position).Magnitude;
 
 				if distance > 30 then
 					localCharacter.HumanoidRootPart.CFrame = targetPv;
