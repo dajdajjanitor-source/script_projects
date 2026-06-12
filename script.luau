@@ -428,7 +428,7 @@ commands = setmetatable({
 				elseif typeof(v) == "Vector3" then
 					t[i] = `vector3({v.x}, {v.y}, {v.z})`;
 				else
-					warn("Couldnt say type " .. typeof(t));
+					warn("Couldnt say type " .. typeof(v));
 				end;
 			end;
 			TextChatService.TextChannels.RBXGeneral:SendAsync(
@@ -624,6 +624,7 @@ runner = {
 			);
 		end;
 
+		-- just rounds a number
 		int = function(source: Player, toInt: string): number?
 			local integer = tonumber(toInt)
 			if integer then
@@ -632,27 +633,29 @@ runner = {
 			return;
 		end;
 
+		-- just a number idk why this shit exists
 		float = function(source: Player, toFloat: string): number?
 			local float = tonumber(toFloat)
 			return float;
 		end;
 
+		-- full enum directories/search
 		enum = function(source: Player, enumDirectory: string)
 			local arg = enumDirectory:split('.')
 			return Enum[arg[1]][arg[2]];
 		end;
-		-- string to boolean ("true" -> true)
+		-- boolean ("true" -> true)
 		bool = function(source: Player, str: string): number?
 			local value;
 			value = if str=="true" then true elseif str=="false" then false else nil;
 			return value;
 		end;
-		--globals
+		--globals so you can save and load shit
 		glb = function(source: Player, global: string): number?
 			return _G[global];
 		end;
 		
-		--/ instance dir
+		--/ instance dir (only supports reading instance and property of instance)
 		obj = function(source: Player, directory: string): number?
 			local it = nil;
 
@@ -751,6 +754,18 @@ runner = {
 			return;
 		end;
 
+		local runs = true;
+		for _, modifierStr:string in tokenizedCommand.modifiers do
+			do
+				local plrSpecifierStart, plrSpecifierEnd = modifierStr:find('p:');
+				local name = modifierStr:sub(plrSpecifierEnd+1, #modifierStr):lower();
+				
+				if name ~= LocalPlayer.Name:lower() then runs = false; return; end;
+			end;
+		end;
+
+		if not runs then return end;
+
 		--//fix loop; runs IMMEDIATELY and not after the last command is done
         if table.find(tokenizedCommand.modifiers, 'loop') then
             while foundCommand._alive and task.wait() do
@@ -761,6 +776,7 @@ runner = {
 				task.wait();
             end;
         end;
+		
 
 		local success, error = foundCommand:execute(tokenizedCommand.modifiers, player, tokenizedCommand.arguments);
 		if not success then
