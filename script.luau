@@ -2,9 +2,10 @@
 local s = DateTime.now().UnixTimestampMillis;
 
 local _metadata = {
-	['_VERSION'] = {1, 7};
+	['_VERSION'] = {1, 8};
 }
 
+local KeyframeSequenceProvider = game:GetService("KeyframeSequenceProvider")
 local Players = game:GetService("Players")
 local TextChatService = game:GetService("TextChatService");
 
@@ -34,8 +35,8 @@ local command = {} do
 			self:closeActiveThread();
 			self._alive = true;
 			local perms = permissions.getPlayerPermissions(source);
-			if not perms then warn("invalid permissions"); return; end;
-
+			if not perms then runner.sendChatMessage("invalid permissions"); return; end;
+			if self.clientLocked and not perms.clientCommandAccess then runner.sendChatMessage("you cant access this command via client access"); return; end;
 			local thread = task.spawn(
 				function()
                     pcall(self.callback, self, source, table.unpack(args));
@@ -67,9 +68,9 @@ local command = {} do
         end;    
     end;
 
-	function command:closeActiveThread()
+	function command:closeActiveThread(source)
 		if not self._activeThreads then return; end;
-		if self.cleanup then self.cleanup() end;
+		if self.cleanup then self.cleanup(self, source) end;
 		self._alive = false;
 
         for i, v in self._activeThreads do
@@ -142,6 +143,30 @@ commands = setmetatable({
 		end;
 	};
 
+    --//modify
+    command.new {
+		name = "modify";
+		callback = function(self, source: Player, type: "property" | "method", instance: Instance, p, ...)
+            if type == "property" then
+				instance[p] = table.pack(...)[1]
+			elseif type == "method" then
+				instance[p](instance, ...)
+			else
+				runner.sendChatMessage(`unknown method type "{type}" use property or method`)
+			end;
+		end;
+	};
+
+    --//global
+    command.new {
+		name = "global";
+		callback = function(self, source: Player, name: string, toSet: any)
+            _G[name] = toSet;
+            runner.sendChatMessage(`saved {name} as {toSet}`);
+		end;
+	};
+
+    --//gamble command (does a random command)
 	command.new {
 		name = "gamble";
 		callback = function()
@@ -152,7 +177,8 @@ commands = setmetatable({
 	--//permission add,remove & list
 	command.new {
 		name = "perms/permission/permissions";
-		callback = function(self, source: Player, type: string, name: string)
+		callback = function(self, source: Player, type: string, player: Player)
+			local name = player.Name or player;
 			if type=="add" then
 				local perms = permission.new(name, false);
 				table.insert(permissions, perms);
@@ -388,7 +414,7 @@ commands = setmetatable({
 		end;
 	};
 
-	--//chat
+	--//chat/say
 	command.new {
 		name = "say/chat";
 		callback = function(self, source, ...)
@@ -397,9 +423,13 @@ commands = setmetatable({
 				if typeof(v) == "Instance" then
 					if v:IsA("Player") then
 						t[i] = v.Name;
+					else
+						t[i] = (`instance({v.Name})`);
 					end;
 				elseif typeof(v) == "Vector3" then
-					t[i] = `Vector3({v.x}, {v.y}, {v.z})`;
+					t[i] = `vector3({v.x}, {v.y}, {v.z})`;
+				else
+					warn("Couldnt say type " .. typeof(t));
 				end;
 			end;
 			TextChatService.TextChannels.RBXGeneral:SendAsync(
@@ -408,7 +438,7 @@ commands = setmetatable({
 		end;
 	};
 
-	--//chat
+	--//mock
 	command.new {
 		name = "mock/copy";
 		callback = function(self, source, toCopy: Player)
@@ -421,7 +451,7 @@ commands = setmetatable({
 			end)
 		end;
 		cleanup = function(self, source)
-			self.con:Disconnect()
+			if self.con then self.con:Disconnect(); end;
 		end;
 	};
 
@@ -484,7 +514,7 @@ commands = setmetatable({
 			while task.wait() do
 				LocalPlayer.Character:PivotTo(
 					targetPlayer.Character:GetPivot() *
-						CFrame.new(0, -1, 0) * CFrame.fromOrientation(math.rad(90), 0, 0)
+						CFrame.new(0, -2, 0) * CFrame.fromOrientation(math.rad(90), 0, 0)
 				)
 			end;
 		end;
@@ -508,11 +538,14 @@ commands = setmetatable({
 	};
 });
 
-local fun = {
-	replies = {
-		["what are you"] = "a machine of destruction";
-	}
+local retardedPhrases = {
+	["autobots roll out"] = "beep boop bip bop bip boop";
 }
+
+local nameInstanceMap = {
+	["game"] = game;
+	["workspace"] = workspace;
+};
 
 runner = {
 
@@ -528,7 +561,7 @@ runner = {
 		-- player name selector
 		player = function(source: Player, name: string): Player?
 			local allPlayers = game:GetService("Players"):GetPlayers()
-
+			warn("PlayerSelector: " .. name);
 			if name == "$random" then
 				local randomPlayer;
 
@@ -612,6 +645,24 @@ runner = {
 			value = if str=="true" then true elseif str=="false" then false else nil;
 			return value;
 		end;
+		--globals
+		glb = function(source: Player, global: string): number?
+			return _G[global];
+		end;
+		
+		--/ instance dir
+		obj = function(source: Player, directory: string): number?
+			local it = nil;
+
+			for id, name in directory:split(".") do
+				if not it then it = nameInstanceMap[name]; continue; end;
+				it = it[name]
+				if it then continue; end;
+				runner.sendChatMessage(`couldnt find {name} of {it and it.Name}`)
+			end;
+
+			return it;
+		end;
 	};
 
 	typeConvertString = function(source: Player, str: string): any?
@@ -685,7 +736,7 @@ runner = {
 
 
 		local foundCommand = commands.findFromName(tokenizedCommand.command);
-		if not foundCommand then
+		if not foundCommand and permissions.getPlayerPermissions(source) then
 			runner.sendChatMessage(`unknown command "{tokenizedCommand.command}"`)
 			return;
 		end;
@@ -694,16 +745,18 @@ runner = {
 		-- table.insert(runner.ranCommandLog, tokenizedCommand);
 
 		if tokenizedCommand.arguments[1] == "#stop" then
-			foundCommand:closeActiveThread();
+			foundCommand:closeActiveThread(source);
 			return;
 		end;
 
+		--//fix loop; runs IMMEDIATELY and not after the last command is done
         if table.find(tokenizedCommand.modifiers, 'loop') then
             while foundCommand._alive and task.wait() do
                 local success, error = foundCommand:execute(tokenizedCommand.modifiers, player, tokenizedCommand.arguments);
 		        if not success then
                     warn(error)
                 end
+				task.wait();
             end;
         end;
 
@@ -722,7 +775,14 @@ runner = {
 		local player = game:GetService("Players"):GetPlayerByUserId(source.UserId);
 		if not player then return end;
 
+
 		local text = messageObject.Text;
+
+		for i, v in retardedPhrases do
+			if text == i then
+				runner.sendChatMessage(v);
+			end; 
+		end;
 
 		local chained = text:split(runner.commandChainingChar);
 
@@ -739,3 +799,9 @@ runner = {
 
 if _G.msgRcCon then _G.msgRcCon:Disconnect() end;
 _G.msgRcCon = TextChatService.MessageReceived:Connect(runner.incomingMessage);
+
+task.spawn(function()
+	while task.wait(60*5) do
+		keypress(0x20)
+	end;
+end)
