@@ -5,7 +5,6 @@ local _metadata = {
 	['_VERSION'] = {1, 8};
 }
 
-local KeyframeSequenceProvider = game:GetService("KeyframeSequenceProvider")
 local Players = game:GetService("Players")
 local TextChatService = game:GetService("TextChatService");
 
