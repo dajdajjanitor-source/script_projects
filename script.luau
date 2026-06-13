@@ -499,7 +499,7 @@ commands = setmetatable({
 
 				if distance < 0.5 then
 					localCharacter.HumanoidRootPart.CFrame = MoveToCf;
-					return;
+					continue;
 				end;
 
 				local MoveTo = MoveToCf.Position
