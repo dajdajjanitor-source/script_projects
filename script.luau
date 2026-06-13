@@ -42,14 +42,6 @@ local command = {} do
                 end
 			)
 
-			-- if table.find(modifiers, "loop") then
-			-- 	while task.wait() and self._alive do
-            --         self:cleanThreads();
-			-- 		local nthread = task.spawn(self.callback, source, table.unpack(args))
-			-- 		table.insert(self._activeThreads, nthread);
-			-- 	end;
-			-- end;
-
 			table.insert(self._activeThreads, thread)
 		end)
 	end;
@@ -437,6 +429,30 @@ commands = setmetatable({
 		end;
 	};
 
+	--//GLOBAL chat/say
+	command.new {
+		name = "globalsay/globalchat/gsay/gchat";
+		callback = function(self, source, ...)
+			local t = table.pack(...);
+			for i, v in t do
+				if typeof(v) == "Instance" then
+					if v:IsA("Player") then
+						t[i] = v.Name;
+					else
+						t[i] = (`instance({v.Name})`);
+					end;
+				elseif typeof(v) == "Vector3" then
+					t[i] = `vector3({v.x}, {v.y}, {v.z})`;
+				else
+					warn("Couldnt say type " .. typeof(v));
+				end;
+			end;
+			TextChatService.TextChannels.RBXGeneral:SendAsync(
+				table.concat(t, " ")
+			);
+		end;
+	};
+
 	--//mock
 	command.new {
 		name = "mock/copy";
@@ -454,7 +470,7 @@ commands = setmetatable({
 		end;
 	};
 
-	--//follow
+	--//follow/chase
 	command.new {
 		name = "follow/chase";
 		callback = function(self, source, targetPlayer: Player, offset:Vector3?)
@@ -462,22 +478,31 @@ commands = setmetatable({
 				local localCharacter = LocalPlayer.Character;
 				local targetCharacter = targetPlayer.Character;
 
-				if not localCharacter or not targetCharacter then return end;
+				if not (localCharacter and targetCharacter) then continue end;
+				if not (localCharacter.Humanoid and targetCharacter.Humanoid) then continue end;
 
 				local curPv = localCharacter.HumanoidRootPart.CFrame;
 				local targetPv = targetCharacter.HumanoidRootPart.CFrame;
 
+				local MoveToCf = (targetCharacter.HumanoidRootPart.CFrame * CFrame.new(offset or Vector3.zero))
+
 				local distance = (curPv.Position - targetPv.Position).Magnitude;
 
 				if distance > 30 then
-					localCharacter.HumanoidRootPart.CFrame = targetPv;
+					localCharacter.HumanoidRootPart.CFrame = MoveToCf;
+					continue;
 				end;
 
-				if (curPv.Y+4 < targetPv.Y) then
+				if (curPv.Y+4 < targetPv.Y) and (distance > 5) then
 					localCharacter.Humanoid:ChangeState(Enum.HumanoidStateType.Jumping);
 				end;
 
-				local MoveTo = (targetCharacter.HumanoidRootPart.CFrame * CFrame.new(offset or Vector3.zero)).Position
+				if distance < 0.5 then
+					localCharacter.HumanoidRootPart.CFrame = MoveToCf;
+					return;
+				end;
+
+				local MoveTo = MoveToCf.Position
 				
 
 				localCharacter.Humanoid:MoveTo(
@@ -551,13 +576,19 @@ local nameInstanceMap = {
 
 runner = {
 
-	commandPrefix = "*";
-	commandNameEnd = ';';
+	commandPrefix = "*"; -- self explanatory
+	commandNameEnd = ';'; -- to stop the command name and start the arguments (or just to stop it i guess)
 
-	commandChainingChar = '&amp;';
+	commandChainingChar = '&amp;'; -- when you chain/do multiple commands in a single chat
+	specialArgChar = "$";
 
 	ranCommandLog = {}; --// logs the commands you run
 
+	specialGlobals = {
+		Position = function(self, source)
+
+		end;
+	};
 
 	typeConverters = {
 		-- player name selector
@@ -616,6 +647,9 @@ runner = {
 		end;
 		--// "vec3:x,y,z -> Vector3.new(x,y,z)"
 		vec3 = function(source: Player, vec3: string): Vector3?
+			if vec3 == "$random" then
+
+			end;
 			local coordinates = vec3:gsub(" ", ""):split(',');
 			return Vector3.new(
 				coordinates[1],
