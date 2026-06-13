@@ -2,7 +2,7 @@
 local s = DateTime.now().UnixTimestampMillis;
 
 local _metadata = {
-	['_VERSION'] = {1, 8};
+	['_VERSION'] = {1, 11};
 }
 
 local Players = game:GetService("Players")
@@ -478,36 +478,33 @@ commands = setmetatable({
 				local localCharacter = LocalPlayer.Character;
 				local targetCharacter = targetPlayer.Character;
 
-				if not (localCharacter and targetCharacter) then continue end;
-				if not (localCharacter.Humanoid and targetCharacter.Humanoid) then continue end;
+				if not (localCharacter and targetCharacter) then warn("no"); continue end;
+				if not (localCharacter.HumanoidRootPart and targetCharacter.HumanoidRootPart) then warn("no"); continue end;
 
 				local curPv = localCharacter.HumanoidRootPart.CFrame;
 				local targetPv = targetCharacter.HumanoidRootPart.CFrame;
 
-				local MoveToCf = (targetCharacter.HumanoidRootPart.CFrame * CFrame.new(offset or Vector3.zero))
+				local MoveToCf = (targetPv * CFrame.new(offset or Vector3.zero))
 
-				local distance = (curPv.Position - targetPv.Position).Magnitude;
+				local distance = (curPv.Position - MoveToCf.Position).Magnitude;
 
-				if distance > 30 then
+				if (distance > 30) or (distance < 0.5) then
 					localCharacter.HumanoidRootPart.CFrame = MoveToCf;
+					warn("no");
 					continue;
 				end;
 
 				if (curPv.Y+4 < targetPv.Y) and (distance > 5) then
 					localCharacter.Humanoid:ChangeState(Enum.HumanoidStateType.Jumping);
-				end;
-
-				if distance < 0.5 then
-					localCharacter.HumanoidRootPart.CFrame = MoveToCf;
-					continue;
+					warn("jump");
 				end;
 
 				local MoveTo = MoveToCf.Position
-				
-
 				localCharacter.Humanoid:MoveTo(
 					MoveTo
 				);
+
+				warn("move");
 			end;
 		end;
 	};
