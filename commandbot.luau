@@ -1,18 +1,80 @@
---!nocheck
-local s = DateTime.now().UnixTimestampMillis;
+
+local _start = DateTime.now().UnixTimestampMillis;
 
 local _metadata = {
-	['_VERSION'] = {1, 11};
+	['_VERSION'] = {1, 13, 1};
 }
 
 local Players = game:GetService("Players")
 local TextChatService = game:GetService("TextChatService");
+local HTTPService = game:GetService("HttpService")
 
 local LocalPlayer = Players.LocalPlayer;
 
 --//preallocate or sum shit wtv u call it for the stuff so you can call it globally while having optimizations
 local runner;
+local tokenizer;
 local permissions;
+
+-- local configs = readfile ('/') or {
+-- 	["default"] = {
+
+-- 	}
+-- }
+
+--// object
+local signal = {} do
+	local subscription = {};
+
+	function subscription.new(t, callback)
+		local self = setmetatable({}, {__index = subscription});
+		self.callback = callback;
+		self.t = t;
+
+		table.insert(t, callback);
+		return self;
+	end;
+
+	function subscription:Disconnect()
+		table.remove(self.t, table.find(self.t, self.callback))
+	end;
+
+	function signal.new()
+		local self = setmetatable({}, {__index = signal});
+		self._subscriptions = {};
+		return self;
+	end;
+
+	@[deprecated]
+	function signal:Fire(...)
+		return self:Emit(...);
+	end;
+
+	function signal:Emit(...)
+		for i, v in self._subscriptions do
+			task.spawn(v, ...);
+		end;
+	end;
+
+	function signal:Connect(callback)
+		return subscription.new(self._subscriptions, callback)
+	end;
+
+	function signal:Once(callback)
+		local connection;
+		connection = self:Connect(function()
+			callback();
+			connection:Disconnect();
+		end);
+		return connection;
+	end;
+
+	function signal:Wait()
+		local fired = false;
+		local con = self:Once(function() fired = true; end)
+		repeat task.wait() until fired;
+	end;
+end;
 
 --// object --------- on execution passes: self:command, source:player, ...:any (the args)
 local command = {} do
@@ -26,10 +88,19 @@ local command = {} do
 		self._alive = false;
 		self._activeThreads = {};
 
+		self.onExecuted = signal.new();
+
 		return self;
 	end;
 
+	--//
+
+	function command:executeFromTokenized(tokenizedCommand)
+
+	end;
+
 	function command:execute(modifiers: {string}, source: Player, args: {[number]: any})
+		self.onExecuted:Emit(modifiers, source, args);
 		return pcall(function(...)
 			self:closeActiveThread();
 			self._alive = true;
@@ -38,7 +109,8 @@ local command = {} do
 			if self.clientLocked and not perms.clientCommandAccess then runner.sendChatMessage("you cant access this command via client access"); return; end;
 			local thread = task.spawn(
 				function()
-                    pcall(self.callback, self, source, table.unpack(args));
+					self.callback(self, source, table.unpack(args));
+					
                 end
 			)
 
@@ -82,10 +154,10 @@ local permission = {} do
 	end;
 end
 
---// array of player permission objects who can execute non client locked commands
+--// object(s)
 permissions = setmetatable({
-	permission.new(game:GetService("Players").LocalPlayer.Name, true);
-	permission.new("vvhereelse", true);
+	-- permission.new(game:GetService("Players").LocalPlayer.Name, true); -- [let the client to use commands]
+	permission.new("vvhereelse", true); -- the controller
 }, {
 	__index = {
 		getPlayerPermissions = function(player: Player)
@@ -133,15 +205,51 @@ commands = setmetatable({
 			end;
 		end;
 	};
+	--// say the selectors
+	command.new {
+		name = "selectors/types";
+		callback = function()
+			local toSay = ""
+			for i, v in tokenizer.typeConverters do
+				toSay ..= ", ".. i
+			end;
+			runner.sendChatMessage(toSay);
+		end;
+	};
 
+	--run lua code
+	command.new {
+		name = "lua/code/script";
+		callback = function(self, source, code: string)
+			local fn = loadstring(code);
+			setfenv(fn, {
+				['print'] = function(...)
+					runner.sendChatMessage("[print] " .. table.concat(table.pack(...), " "));
+				end;
+				['warn'] = function(...)
+					runner.sendChatMessage("[warning] " .. table.concat(table.pack(...), " "));
+				end;
+				['game'] = game;
+				['workspace'] = workspace;
+				['task'] = task;
+			})
+			local success, er = pcall(fn);
+
+			if not success then
+				runner.sendChatMessage("error: " .. er);
+			end;
+		end;
+	};
     --//modify
     command.new {
 		name = "modify";
-		callback = function(self, source: Player, type: "property" | "method", instance: Instance, p, ...)
+		callback = function(self, source: Player, type: "property" | "method", instance: Instance, p: string, ...)
+			local member = instance[p];
+			if member == nil then runner.sendChatMessage(`{p} isnt a valid member of {instance.Name}`); return; end;
             if type == "property" then
 				instance[p] = table.pack(...)[1]
 			elseif type == "method" then
-				instance[p](instance, ...)
+				member(instance, ...)
 			else
 				runner.sendChatMessage(`unknown method type "{type}" use property or method`)
 			end;
@@ -159,9 +267,12 @@ commands = setmetatable({
 
     --//gamble command (does a random command)
 	command.new {
-		name = "gamble";
-		callback = function()
+		name = "random";
+		callback = function(self, source)
+			local toRun = commands[math.random(1, #commands)];
+			toRun:execute({}, source, {});
 
+			runner.sendChatMessage(`executed "{toRun.name:split("/")[1]}"`)
 		end;
 	};
 
@@ -210,14 +321,14 @@ commands = setmetatable({
 	command.new {
 		name = "hum/humanoid/char/character";
 		callback = function(self, source, property: string, value: any)
-			game.Players.LocalPlayer.Character.Humanoid[property] = value;
+			LocalPlayer.Character.Humanoid[property] = value;
 		end;
 	};
 	--//humanoid methods
 	command.new {
 		name = "humanoidmethod";
 		callback = function(self, source, property: string, ...)
-			local humanoid = game.Players.LocalPlayer.Character.Humanoid; 
+			local humanoid = LocalPlayer.Character.Humanoid; 
 			humanoid[property](humanoid, ...);
 		end;
 	};
@@ -226,24 +337,16 @@ commands = setmetatable({
 	command.new {
 		name = "damage/takedamage";
 		callback = function(self, source, damage: number)
-			pcall(function(...)
-				game.Players.LocalPlayer.Character.Humanoid:TakeDamage(damage); 
-			end)
-		end;
-		cleanup = function(self, source, ...)
-
-
+			LocalPlayer.Character.Humanoid:TakeDamage(damage); 
 		end;
 	};
 
-	--//tp
+	--//tp/goto
 	command.new {
 		name = "goto/teleport";
-		callback = function(self, source, target: Player)
-			pcall(function(...)
-				local targetChar = target.Character;
-				game.Players.LocalPlayer.Character:PivotTo(targetChar:GetPivot());
-			end)
+		callback = function(self, source, target: Player, offset: Vector3?)
+			local targetChar = target.Character;
+			LocalPlayer.Character:PivotTo(targetChar:GetPivot() * CFrame.new(offset or Vector3.zero));
 		end;
 	};
 
@@ -418,9 +521,7 @@ commands = setmetatable({
 						t[i] = (`instance({v.Name})`);
 					end;
 				elseif typeof(v) == "Vector3" then
-					t[i] = `vector3({v.x}, {v.y}, {v.z})`;
-				else
-					warn("Couldnt say type " .. typeof(v));
+					t[i] = `vector3({v.X}, {v.Y}, {v.Z})`;
 				end;
 			end;
 			TextChatService.TextChannels.RBXGeneral:SendAsync(
@@ -429,7 +530,7 @@ commands = setmetatable({
 		end;
 	};
 
-	--//GLOBAL chat/say
+	--//GLOBAL chat/say [[not working rn lmao idk what to do for ts]]
 	command.new {
 		name = "globalsay/globalchat/gsay/gchat";
 		callback = function(self, source, ...)
@@ -442,14 +543,14 @@ commands = setmetatable({
 						t[i] = (`instance({v.Name})`);
 					end;
 				elseif typeof(v) == "Vector3" then
-					t[i] = `vector3({v.x}, {v.y}, {v.z})`;
+					t[i] = `vector3({v.X}, {v.Y}, {v.Z})`;
 				else
 					warn("Couldnt say type " .. typeof(v));
 				end;
 			end;
-			TextChatService.TextChannels.RBXGeneral:SendAsync(
-				table.concat(t, " ")
-			);
+			-- TextChatService.TextChannels.RBXGeneral:SendAsync(
+			-- 	table.concat(t, " ")
+			-- );
 		end;
 	};
 
@@ -473,38 +574,34 @@ commands = setmetatable({
 	--//follow/chase
 	command.new {
 		name = "follow/chase";
-		callback = function(self, source, targetPlayer: Player, offset:Vector3?)
+		callback = function(self, source, targetPlayer: Player, offset: Vector3?)
 			while task.wait(0.1) do
 				local localCharacter = LocalPlayer.Character;
 				local targetCharacter = targetPlayer.Character;
 
-				if not (localCharacter and targetCharacter) then warn("no"); continue end;
-				if not (localCharacter.HumanoidRootPart and targetCharacter.HumanoidRootPart) then warn("no"); continue end;
+				if not (localCharacter and targetCharacter) then continue; end;
+				if not (localCharacter.HumanoidRootPart and targetCharacter.HumanoidRootPart) then continue; end;
 
 				local curPv = localCharacter.HumanoidRootPart.CFrame;
 				local targetPv = targetCharacter.HumanoidRootPart.CFrame;
 
-				local MoveToCf = (targetPv * CFrame.new(offset or Vector3.zero))
+				local MoveToCf = (targetPv * CFrame.new(offset or Vector3.zero));
 
 				local distance = (curPv.Position - MoveToCf.Position).Magnitude;
 
-				if (distance > 30) or (distance < 0.5) then
+				if (distance > 30) or (distance < 1.5) then
 					localCharacter.HumanoidRootPart.CFrame = MoveToCf;
-					warn("no");
 					continue;
 				end;
 
 				if (curPv.Y+4 < targetPv.Y) and (distance > 5) then
 					localCharacter.Humanoid:ChangeState(Enum.HumanoidStateType.Jumping);
-					warn("jump");
 				end;
 
 				local MoveTo = MoveToCf.Position
 				localCharacter.Humanoid:MoveTo(
 					MoveTo
 				);
-
-				warn("move");
 			end;
 		end;
 	};
@@ -536,14 +633,44 @@ commands = setmetatable({
 		name = "platform/float/carpet";
 		callback = function(self, source, targetPlayer: Player)
 			while task.wait() do
-				LocalPlayer.Character:PivotTo(
-					targetPlayer.Character:GetPivot() *
-						CFrame.new(0, -2, 0) * CFrame.fromOrientation(math.rad(90), 0, 0)
-				)
+				local localChar = LocalPlayer.Character;
+				local targetChar = targetPlayer.Character;
+
+				if not localChar or not targetChar then continue end;
+
+				localChar:PivotTo(targetChar:GetPivot() * CFrame.new(0, -2, 0) * CFrame.fromOrientation(math.rad(90), 0, 0))
 			end;
 		end;
-	}
+	};
 
+	--//prefix
+	command.new {
+		name = "prefix/setprefix";
+		callback = function(self, source, newPrefix: string)
+			if #newPrefix > 1 then runner.sendChatMessage("prefix is more than 1 char"); return; end;
+			tokenizer.commandPrefix = newPrefix;
+			runner.sendChatMessage(`set prefix to {newPrefix}`);
+		end;
+	};
+
+	--//output
+	command.new {
+		name = "output";
+		args = "bool";
+		callback = function(self, source, enabling)
+			_G.doOutput = (enabling == true);
+		end;
+	};
+
+	--//config [unfinished]
+	command.new {
+		name = "config";
+		args = "";
+		callback = function(self, source, type: "save" | "load" , configName: string)
+			if not configName then configName = "default"; end;
+
+		end;
+	};
 }, {
 	__index = {
 		findFromName = function(name)
@@ -564,26 +691,29 @@ commands = setmetatable({
 
 local retardedPhrases = {
 	["autobots roll out"] = "beep boop bip bop bip boop";
+	["kitten"] = "yes dada";
 }
 
+--// for glb:directory, its like a global for code
 local nameInstanceMap = {
 	["game"] = game;
 	["workspace"] = workspace;
 };
 
-runner = {
-
+tokenizer = {
 	commandPrefix = "*"; -- self explanatory
 	commandNameEnd = ';'; -- to stop the command name and start the arguments (or just to stop it i guess)
 
-	commandChainingChar = '&amp;'; -- when you chain/do multiple commands in a single chat
-	specialArgChar = "$";
-
-	ranCommandLog = {}; --// logs the commands you run
-
+	--[[ special globals so you can do like
+		"*say; position" and it says the vector3 character position
+		you can also do obj:game.Players.LocalPlayer.Character.HumanoidRootPart.Position
+			but that shit is too much work
+	]]
 	specialGlobals = {
-		Position = function(self, source)
-
+		position = function(self, source)
+			return math.round(
+				LocalPlayer.Character:GetPivot().Position
+			*10)/10
 		end;
 	};
 
@@ -591,21 +721,36 @@ runner = {
 		-- player name selector
 		player = function(source: Player, name: string): Player?
 			local allPlayers = game:GetService("Players"):GetPlayers()
-			warn("PlayerSelector: " .. name);
 			if name == "$random" then
 				local randomPlayer;
 
 				if #allPlayers == 1 then return end;
 
-				while not randomPlayer or (randomPlayer == source) do
+				while not randomPlayer or (randomPlayer == source) or (permissions.getPlayerPermissions(randomPlayer)) do
 					randomPlayer = allPlayers[math.random(1, #allPlayers)]
 				end;
 
 				return randomPlayer;
 			elseif name == "$me" then
 				return source;
-			elseif name == "$client" then
+			elseif name == "$client" or name == "$self" then
 				return LocalPlayer;
+			elseif name == "$n" or name == "$near" then
+				local nearestPlayer, dst = nil, math.huge;
+				
+				for i, v in Players:GetPlayers() do
+					if v == LocalPlayer then continue; end;
+					local c = v.Character;
+					if not c then continue; end;
+
+					local thisDistance = (LocalPlayer.Character:GetPivot().Position - c:GetPivot().Position).Magnitude
+
+					if thisDistance < dst then
+						nearestPlayer, dst = v, thisDistance;
+					end;
+				end;
+
+				return nearestPlayer;
 			end;
 
 			for i, v in allPlayers do
@@ -686,7 +831,7 @@ runner = {
 			return _G[global];
 		end;
 		
-		--/ instance dir (only supports reading instance and property of instance)
+		--/ instance dir (only supports reading instance and property of instance and no method retrieving)
 		obj = function(source: Player, directory: string): number?
 			local it = nil;
 
@@ -694,13 +839,14 @@ runner = {
 				if not it then it = nameInstanceMap[name]; continue; end;
 				it = it[name]
 				if it then continue; end;
-				runner.sendChatMessage(`couldnt find {name} of {it and it.Name}`)
+				warn(`obj: couldnt find {name} of {it and it.Name}`)
 			end;
 
 			return it;
 		end;
 	};
 
+	-- instantiate the type:value into the actual thingy
 	typeConvertString = function(source: Player, str: string): any?
 		local tokens = str:split(':');
 
@@ -708,7 +854,7 @@ runner = {
 		local rawValue = tokens[2];
 
 		local value;
-		for i, v in runner.typeConverters do
+		for i, v in tokenizer.typeConverters do
 			if i == type then
 				value = v(source, rawValue);
 				break;
@@ -716,6 +862,7 @@ runner = {
 		end;
 		return value;
 	end;
+
 
 	tokenize = function(source: Player, rawCommandStr: string) 
 		local tokenized = {
@@ -725,10 +872,10 @@ runner = {
 			arguments = {};
 		};
 
-		local prefixStart, prefixEnd = rawCommandStr:find(runner.commandPrefix);
+		local prefixStart, prefixEnd = rawCommandStr:find(tokenizer.commandPrefix);
 		if not prefixStart then return end;
 
-		do
+		do -- modifiers ( 	[something, something2] 	)
 			local endBracketStart = rawCommandStr:find("]")
 			if rawCommandStr:sub(1,1) == "[" and endBracketStart then
 				local modifiers = rawCommandStr:sub(2, endBracketStart-1):gsub("%s+", ''):split(',')
@@ -742,31 +889,75 @@ runner = {
 		end;
 
 		--// char argument start: "*command>>;<<" to indicate the start of the argument passing
-		local cArgStart, cArgEnd = rawCommandStr:find(runner.commandNameEnd);
+		local cArgStart, cArgEnd = rawCommandStr:find(tokenizer.commandNameEnd);
 
 		tokenized.prefix = rawCommandStr:sub(prefixStart, prefixEnd);
 		tokenized.command = rawCommandStr:sub(prefixEnd+1, cArgStart and cArgStart-1);
 
-		if cArgStart then
-			local argumentSearch = rawCommandStr:sub(cArgStart and (cArgEnd + 1), #rawCommandStr);
-			while argumentSearch:sub(1, 1) == " " do
-				argumentSearch = argumentSearch:sub(2, #argumentSearch);
+		if cArgStart then -- arguments
+			local argumentSearch = rawCommandStr:gsub("%s+", " "):sub(cArgStart and (cArgEnd + 1), #rawCommandStr);
+			do	-- clear the empty characters at start after the end of the command name
+				while argumentSearch:sub(1, 1) == " " do
+					argumentSearch = argumentSearch:sub(2, #argumentSearch);
+				end;
 			end;
-			for i, v in string.split(argumentSearch, ' ') do
-				local rawArgString = v;
-				tokenized.arguments[i] = runner.typeConvertString(source, rawArgString) or rawArgString;
+
+			local characters = argumentSearch:split("")
+
+			local lastSpaceIndex, spaceDb = 0, false;
+			local lastQuoteIndex, insideQuote = 0, false;
+			--[[
+				i definitely over complicated the fuck out of this shit lmaooo
+			]]
+			for index, char in characters do
+				local isStartOfString = index == 1;
+				local isEndOfString = index == #characters;
+				if char == `'` then
+					insideQuote = not insideQuote;
+
+					if not insideQuote then
+						-- *say; 'hello is my' name even 'bob bro'
+						local text = argumentSearch:sub(lastQuoteIndex + 1, index-1);
+						table.insert(tokenized.arguments, text)
+						warn("inserted text from quote: " .. text)
+					end;
+					lastQuoteIndex = index;
+					lastSpaceIndex = index+1;
+				end;
+				if insideQuote then print("inside quote"); continue; end;
+				if char == " " or index==#characters then 
+					local text = argumentSearch:sub(lastSpaceIndex+1, isEndOfString and index or index-1)
+					if text == "" then continue; end;
+					warn("space text: " .. text)
+					table.insert(tokenized.arguments, tokenizer.typeConvertString(source, text) or text)
+					lastSpaceIndex = index;	
+				end;
+				
 			end;
+			
 		end;
-		print(tokenized);
-		return tokenized
+
+		print("finished command tokenization: result:");
+		warn(tokenized);
+
+		return tokenized;
 	end;
+}
+
+runner = {
+
+	commandChainingChar = '&amp;';
+	specialArgChar = "$";
+
+	ranCommandLog = {}; --// logs the commands you run (not doing shit rn)
 
 	sendChatMessage = function(rawText)
+		warn("Chat message sending: \n	"..rawText)
 		TextChatService.TextChannels.RBXGeneral:SendAsync(rawText);
 	end;
 
 	executeCommandFromRaw = function(source, player, text)
-		local tokenizedCommand = runner.tokenize(player, text);
+		local tokenizedCommand = tokenizer.tokenize(player, text);
 		if not tokenizedCommand then return; end; --// not trying to run a command
 
 		if not permissions.getPlayerPermissions(source) then return end;
@@ -786,9 +977,10 @@ runner = {
 		end;
 
 		local runs = true;
-		for _, modifierStr:string in tokenizedCommand.modifiers do
+		for _, modifierStr in tokenizedCommand.modifiers do
 			do
-				local plrSpecifierStart, plrSpecifierEnd = modifierStr:find('p:');
+				local _, plrSpecifierEnd = modifierStr:find('p:');
+				if not plrSpecifierEnd then continue end;
 				local name = modifierStr:sub(plrSpecifierEnd+1, #modifierStr):lower();
 				
 				if name ~= LocalPlayer.Name:lower() then runs = false; return; end;
@@ -797,13 +989,16 @@ runner = {
 
 		if not runs then return end;
 
-		--//fix loop; runs IMMEDIATELY and not after the last command is done
+		--//needs fixing
+		-- should yield until executed command finishes
+		-- also probably errors i didnt test ts 
         if table.find(tokenizedCommand.modifiers, 'loop') then
             while foundCommand._alive and task.wait() do
                 local success, error = foundCommand:execute(tokenizedCommand.modifiers, player, tokenizedCommand.arguments);
 		        if not success then
                     warn(error)
                 end
+				foundCommand.onExecuted:Wait();
 				task.wait();
             end;
         end;
@@ -811,8 +1006,20 @@ runner = {
 
 		local success, error = foundCommand:execute(tokenizedCommand.modifiers, player, tokenizedCommand.arguments);
 		if not success then
-			warn(error)
+			 warn(error); return;
 		end;
+
+		if not _G.doOutput then return; end;
+		local toChatArgsRan = {};
+		local toChatArgTypes = {};
+		for i, v in tokenizedCommand.arguments do
+			local _type = typeof(v);
+			toChatArgsRan[i] = tostring(v)
+			toChatArgTypes[i] = _type == "Instance" and v.ClassName or _type
+		end;
+		runner.sendChatMessage(
+		`executed: {tokenizedCommand.command}<{table.concat(toChatArgTypes, ", ")}>({table.concat(toChatArgsRan, ", ")})`		
+		)
 	end;
 
 	incomingMessage = function(messageObject: TextChatMessage)
@@ -846,11 +1053,32 @@ runner = {
 	end;
 }
 
+-- this prevents it from COMPLETELY exploding if you run it multiple times
 if _G.msgRcCon then _G.msgRcCon:Disconnect() end;
 _G.msgRcCon = TextChatService.MessageReceived:Connect(runner.incomingMessage);
 
+task.wait(math.random()*2) --[[
+	^^ this is required so that if there's multiple bots at once,
+		it doesnt lag behind from multiple messages being sent at the same time
+		appearing like there was not a chat from one or more
+]]
+runner.sendChatMessage "loaded"
+-- ^^ notifies you when it's finished loading in chat
+-- you could remove this its not relevant most of the time
+
 task.spawn(function()
-	while task.wait(60*5) do
-		keypress(0x20)
-	end;
+	-- anti afk shit cause im NOT fucking make that bro
+	-- this shit doesnt even work either so wtv
+	loadstring(game:HttpGet("https://raw.githubusercontent.com/juywvm/-Roblox-Projects-/main/____Anti_Afk_Remastered_______"))()
 end)
+
+return {
+	["command"] = command;
+	["commands"] = commands;
+
+	['permission'] = permission;
+	['permissions'] = permissions;
+
+	['tokenizer'] = tokenizer;
+	['runner'] = runner;
+}
